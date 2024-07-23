@@ -4,7 +4,7 @@ use clap::Parser;
 use miette::IntoDiagnostic;
 use protox::{
     prost_reflect::{
-        prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor
+        prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor
     },
     Compiler,
 };
@@ -85,8 +85,7 @@ fn insert_comments(
     in_text: &str,
     out: &mut std::fs::File,
 ) -> miette::Result<()> {
-    let mut out_text = in_text.to_string();
-    let offsets = get_lines_offsets(&out_text);
+    let offsets = get_lines_offsets(&in_text);
     let source_info = fd
         .file_descriptor_proto()
         .source_code_info
@@ -100,15 +99,17 @@ fn insert_comments(
         let start = offsets[start_line] + start_col;
         if let Some(comment) = get_comment(fd, loc) {
             let spaces = &in_text[start - start_col..start];
-            println!("comment {}", &comment);
             insertions.push((start, format_comment(comment, spaces)));
         }
     }
     insertions.sort_by_key(|(start, _)| *start);
-    for (start, text) in insertions.into_iter().rev() {
-        out_text.insert_str(start, &text);
+    let mut last = 0;
+    for (start, text) in insertions.into_iter() {
+        out.write_all(&in_text[last..start].as_bytes()).into_diagnostic()?;
+        last = start;
+        out.write_all(text.as_bytes()).into_diagnostic()?;
     }
-    out.write_all(out_text.as_bytes()).into_diagnostic()?;
+    out.write_all(&in_text[last..].as_bytes()).into_diagnostic()?;
     Ok(())
 }
 
@@ -154,26 +155,16 @@ impl Commented for DynamicMessage {
             .map(|s| s.to_string())
     }
 }
-impl Commented for MessageDescriptor {
-    fn get_comment(&self) -> Option<String> {
-        self.options().get_comment()
-    }
+macro_rules! impl_commented {
+    ($($t:ty),*) => {
+        $(impl Commented for $t {
+            fn get_comment(&self) -> Option<String> {
+                self.options().get_comment()
+            }
+        })*
+    };
 }
-impl Commented for EnumDescriptor {
-    fn get_comment(&self) -> Option<String> {
-        self.options().get_comment()
-    }
-}
-impl Commented for EnumValueDescriptor {
-    fn get_comment(&self) -> Option<String> {
-        self.options().get_comment()
-    }
-}
-impl Commented for FieldDescriptor {
-    fn get_comment(&self) -> Option<String> {
-        self.options().get_comment()
-    }
-}
+impl_commented!(MessageDescriptor, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, ServiceDescriptor, MethodDescriptor);
 
 fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<String> {
     let mut path: VecDeque<i32> = loc.path.iter().copied().collect();
@@ -195,6 +186,30 @@ fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<
                 enum_.get_comment()
             } else {
                 get_comment_for_enum(&enum_, path)
+            }
+        }
+        6 => {
+            let service = fd.services().nth(idx)?;
+            if path.is_empty() {
+                service.get_comment()
+            } else {
+                get_comment_for_service(&service, path)
+            }
+        }
+        _ => None ,//Some(format!(" {:?}", loc.path)),
+    }
+}
+
+fn get_comment_for_service(service: &ServiceDescriptor, mut path: VecDeque<i32>) -> Option<String> {
+    let typ = path.pop_front()?;
+    let idx = path.pop_front()?;
+    match typ {
+        2 => {
+            let method = service.methods().nth(idx as usize)?;
+            if path.is_empty() {
+                method.get_comment()
+            } else {
+                None
             }
         }
         _ => None,
