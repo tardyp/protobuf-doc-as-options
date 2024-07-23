@@ -3,7 +3,9 @@ use std::{io::Write, path::PathBuf};
 use clap::Parser;
 use miette::IntoDiagnostic;
 use protox::{
-    prost_reflect::{prost_types::{source_code_info, DescriptorProto, EnumDescriptorProto}, FileDescriptor},
+    prost_reflect::{
+        prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor
+    },
     Compiler,
 };
 use std::collections::VecDeque;
@@ -97,8 +99,9 @@ fn insert_comments(
         let start_col = loc.span[1] as usize;
         let start = offsets[start_line] + start_col;
         if let Some(comment) = get_comment(fd, loc) {
-            let spaces = &in_text[start-start_col..start];
-            insertions.push((start, format!("// {}\n{}", comment, spaces)));
+            let spaces = &in_text[start - start_col..start];
+            println!("comment {}", &comment);
+            insertions.push((start, format_comment(comment, spaces)));
         }
     }
     insertions.sort_by_key(|(start, _)| *start);
@@ -109,73 +112,136 @@ fn insert_comments(
     Ok(())
 }
 
+/// Format a comment to fit within 100 characters
+/// and add the correct padding
+fn format_comment(comment: String, spaces: &str) -> String {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    let padding_size = spaces.len() + 4;
+    for word in comment.split_whitespace() {
+        if line.len() + word.len() + padding_size > 100 {
+            lines.push(line.clone());
+            line.clear();
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    lines.push(line);
+    let mut formatted = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            formatted.push_str(spaces);
+        }
+        formatted.push_str("// ");
+        formatted.push_str(&line);
+        formatted.push('\n');
+    }
+    formatted.push_str(spaces);
+    formatted
+}
+
+trait Commented {
+    fn get_comment(&self) -> Option<String>;
+}
+impl Commented for DynamicMessage {
+    fn get_comment(&self) -> Option<String> {
+        self.extensions()
+            .find(|ext| ext.0.name().ends_with("description"))?
+            .1
+            .as_str()
+            .map(|s| s.to_string())
+    }
+}
+impl Commented for MessageDescriptor {
+    fn get_comment(&self) -> Option<String> {
+        self.options().get_comment()
+    }
+}
+impl Commented for EnumDescriptor {
+    fn get_comment(&self) -> Option<String> {
+        self.options().get_comment()
+    }
+}
+impl Commented for EnumValueDescriptor {
+    fn get_comment(&self) -> Option<String> {
+        self.options().get_comment()
+    }
+}
+impl Commented for FieldDescriptor {
+    fn get_comment(&self) -> Option<String> {
+        self.options().get_comment()
+    }
+}
+
 fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<String> {
     let mut path: VecDeque<i32> = loc.path.iter().copied().collect();
-    let fd = fd.file_descriptor_proto();
     // pop first element
     let typ = path.pop_front()?;
     let idx = path.pop_front()? as usize;
     match typ {
         4 => {
-            let message = fd.message_type.get(idx)?;
+            let message = fd.messages().nth(idx)?;
             if path.is_empty() {
-                Some(message.name().to_string())
+                message.get_comment()
             } else {
-                get_comment_for_message(message, path)
+                get_comment_for_message(&message, path)
             }
         }
         5 => {
-            let enum_ = fd.enum_type.get(idx)?;
+            let enum_ = fd.enums().nth(idx)?;
             if path.is_empty() {
-                Some(enum_.name().to_string())
+                enum_.get_comment()
             } else {
-                get_comment_for_enum(enum_, path)
+                get_comment_for_enum(&enum_, path)
             }
         }
         _ => None,
     }
 }
 
-fn get_comment_for_message(message: &DescriptorProto, mut path: VecDeque<i32>) -> Option<String> {
+fn get_comment_for_message(message: &MessageDescriptor, mut path: VecDeque<i32>) -> Option<String> {
     let typ = path.pop_front()?;
     let idx = path.pop_front()?;
     match typ {
         2 => {
-            let field = message.field.get(idx as usize)?;
+            let field = message.fields().nth(idx as usize)?;
             if path.is_empty() {
-                Some(field.name().to_string())
+                field.get_comment()
             } else {
                 None
             }
         }
         3 => {
-            let nested_message = message.nested_type.get(idx as usize)?;
+            let nested_message = message.child_messages().nth(idx as usize)?;
             if path.is_empty() {
-                Some(nested_message.name().to_string())
+                nested_message.get_comment()
+            
             } else {
-                get_comment_for_message(nested_message, path)
+                get_comment_for_message(&nested_message, path)
             }
         }
         4 => {
-            let enum_ = message.enum_type.get(idx as usize)?;
+            let enum_ = message.child_enums().nth(idx as usize)?;
             if path.is_empty() {
-                Some(enum_.name().to_string())
+                enum_.get_comment()
             } else {
-                get_comment_for_enum(enum_, path)
+                get_comment_for_enum(&enum_, path)
             }
         }
         _ => None,
     }
 }
 
-fn get_comment_for_enum(r#enum: &EnumDescriptorProto, mut path: VecDeque<i32>) -> Option<String> {
+fn get_comment_for_enum(r#enum: &EnumDescriptor, mut path: VecDeque<i32>) -> Option<String> {
     let typ = path.pop_front()?;
     let idx = path.pop_front()?;
     match typ {
         2 => {
-            let value = r#enum.value.get(idx as usize)?;
+            let value = r#enum.values().nth(idx as usize)?;
             if path.is_empty() {
-                Some(value.name().to_string())
+                value.get_comment()
             } else {
                 None
             }
