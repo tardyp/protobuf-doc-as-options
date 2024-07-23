@@ -1,0 +1,16 @@
+[package]
+name = "protox-doc"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "option2comments"
+path = "src/option2comments.rs"
+
+[dependencies]
+clap = { version = "4.5.9", features = ["derive"] }
+glob = "0.3.1"
+miette = { version = "7.2.0", features = ["fancy"] }
+protox = "0.7.0"
+shellexpand = "3.1.0"
