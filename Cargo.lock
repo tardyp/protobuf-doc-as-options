@@ -475,6 +475,7 @@ dependencies = [
  "clap",
  "glob",
  "miette",
+ "prost-reflect",
  "protox",
  "shellexpand",
 ]

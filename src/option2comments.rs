@@ -1,14 +1,14 @@
+mod path_resolver;
+
 use std::{io::Write, path::PathBuf};
 
 use clap::Parser;
 use miette::IntoDiagnostic;
-use protox::{
-    prost_reflect::{
-        prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor
-    },
-    Compiler,
+use prost_reflect::{
+    prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor
 };
-use std::collections::VecDeque;
+use protox::Compiler;
+use path_resolver::path_resolver;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
@@ -165,102 +165,15 @@ macro_rules! impl_commented {
     };
 }
 impl_commented!(MessageDescriptor, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, ServiceDescriptor, MethodDescriptor);
-
 fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<String> {
-    let mut path: VecDeque<i32> = loc.path.iter().copied().collect();
-    // pop first element
-    let typ = path.pop_front()?;
-    let idx = path.pop_front()? as usize;
-    match typ {
-        4 => {
-            let message = fd.messages().nth(idx)?;
-            if path.is_empty() {
-                message.get_comment()
-            } else {
-                get_comment_for_message(&message, path)
-            }
-        }
-        5 => {
-            let enum_ = fd.enums().nth(idx)?;
-            if path.is_empty() {
-                enum_.get_comment()
-            } else {
-                get_comment_for_enum(&enum_, path)
-            }
-        }
-        6 => {
-            let service = fd.services().nth(idx)?;
-            if path.is_empty() {
-                service.get_comment()
-            } else {
-                get_comment_for_service(&service, path)
-            }
-        }
-        _ => None ,//Some(format!(" {:?}", loc.path)),
-    }
-}
-
-fn get_comment_for_service(service: &ServiceDescriptor, mut path: VecDeque<i32>) -> Option<String> {
-    let typ = path.pop_front()?;
-    let idx = path.pop_front()?;
-    match typ {
-        2 => {
-            let method = service.methods().nth(idx as usize)?;
-            if path.is_empty() {
-                method.get_comment()
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-fn get_comment_for_message(message: &MessageDescriptor, mut path: VecDeque<i32>) -> Option<String> {
-    let typ = path.pop_front()?;
-    let idx = path.pop_front()?;
-    match typ {
-        2 => {
-            let field = message.fields().nth(idx as usize)?;
-            if path.is_empty() {
-                field.get_comment()
-            } else {
-                None
-            }
-        }
-        3 => {
-            let nested_message = message.child_messages().nth(idx as usize)?;
-            if path.is_empty() {
-                nested_message.get_comment()
-            
-            } else {
-                get_comment_for_message(&nested_message, path)
-            }
-        }
-        4 => {
-            let enum_ = message.child_enums().nth(idx as usize)?;
-            if path.is_empty() {
-                enum_.get_comment()
-            } else {
-                get_comment_for_enum(&enum_, path)
-            }
-        }
-        _ => None,
-    }
-}
-
-fn get_comment_for_enum(r#enum: &EnumDescriptor, mut path: VecDeque<i32>) -> Option<String> {
-    let typ = path.pop_front()?;
-    let idx = path.pop_front()?;
-    match typ {
-        2 => {
-            let value = r#enum.values().nth(idx as usize)?;
-            if path.is_empty() {
-                value.get_comment()
-            } else {
-                None
-            }
-        }
-        _ => None,
+    let pathed = path_resolver(fd, loc)?;
+    match pathed {
+        path_resolver::PathedDescriptor::Message(m) => m.get_comment(),
+        path_resolver::PathedDescriptor::Enum(e) => e.get_comment(),
+        path_resolver::PathedDescriptor::Service(s) => s.get_comment(),
+        path_resolver::PathedDescriptor::Method(m) => m.get_comment(),
+        path_resolver::PathedDescriptor::Field(f) => f.get_comment(),
+        path_resolver::PathedDescriptor::EnumValue(e) => e.get_comment(),
+        _ => None        
     }
 }
