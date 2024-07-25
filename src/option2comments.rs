@@ -8,7 +8,7 @@ use prost_reflect::{
     prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor
 };
 use protox::Compiler;
-use path_resolver::path_resolver;
+use path_resolver::PathedChilds;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
@@ -166,7 +166,7 @@ macro_rules! impl_commented {
 }
 impl_commented!(MessageDescriptor, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, ServiceDescriptor, MethodDescriptor);
 fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<String> {
-    let pathed = path_resolver(fd, loc)?;
+    let pathed = fd.get_child_from_loc(loc)?;
     match pathed {
         path_resolver::PathedDescriptor::Message(m) => m.get_comment(),
         path_resolver::PathedDescriptor::Enum(e) => e.get_comment(),
