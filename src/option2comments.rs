@@ -37,8 +37,9 @@ pub struct Args {
 }
 fn main() -> miette::Result<()> {
     miette::set_panic_hook();
-
-    let args = Args::parse();
+    entry_point(Args::parse())
+}
+fn entry_point(args: Args) -> miette::Result<()> {
     let first_include = args
         .includes
         .get(0)
@@ -148,6 +149,7 @@ trait Commented {
 }
 impl Commented for DynamicMessage {
     fn get_comment(&self) -> Option<String> {
+        println!("extensions names: {:?}", self.extensions().map(|ext| ext.0.name().to_string()).collect::<Vec<_>>());
         self.extensions()
             .find(|ext| ext.0.name().ends_with("description"))?
             .1
@@ -175,5 +177,56 @@ fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<
         path_resolver::PathedDescriptor::Field(f) => f.get_comment(),
         path_resolver::PathedDescriptor::EnumValue(e) => e.get_comment(),
         _ => None        
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use rand;
+    #[test]
+    fn test_get_lines_offsets() {
+        let text = "a\nb\nc";
+        let offsets = get_lines_offsets(text);
+        assert_eq!(offsets, vec![0, 2, 4]);
+    }
+    #[test]
+    fn test_format_comment() {
+        let comment = "This is a long comment that should be split into multiple lines to fit within 100 characters".to_string();
+        let spaces = "    ";
+        let formatted = format_comment(comment, spaces);
+        assert_eq!(formatted.lines().count(), 2);
+    }
+
+    fn run_fixture_test(fixture: &str) {
+        let mut fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        fixtures.push("src/fixtures");
+        let path = fixtures.join(fixture);
+        let temp_output_dir = std::env::temp_dir().join(rand::random::<u64>().to_string());
+        let args = Args {
+            files: vec![path],
+            includes: vec![fixtures.clone()],
+            output: Some(temp_output_dir.clone()),
+        };
+        entry_point(args).unwrap();
+        let expected_path = fixtures.join(fixture).with_extension("expected.proto");
+        let actual = std::fs::read_to_string(temp_output_dir.join(fixture)).unwrap();
+        // std::fs::remove_file(expected_path.clone()).unwrap();
+        if expected_path.exists() {
+            let expected = std::fs::read_to_string(expected_path).unwrap();
+            assert_eq!(expected, actual);
+        } else {
+            // if it is not present, write expected file from generation
+            std::fs::write(expected_path, actual).unwrap();
+        }
+        std::fs::remove_dir_all(temp_output_dir).unwrap();
+    }
+    #[test]
+    fn test_basic() {
+        run_fixture_test("basic.proto");
+    }
+    #[test]
+    fn test_nested() {
+        run_fixture_test("nested.proto");
     }
 }

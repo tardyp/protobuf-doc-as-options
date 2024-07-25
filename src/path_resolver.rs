@@ -44,7 +44,7 @@ impl PathedChilds for FileDescriptor {
                 if path.is_empty() {
                     Some(PathedDescriptor::Message(message))
                 } else {
-                    self.get_child_from_path(path)
+                    message.get_child_from_path(path)
                 }
             }
             tag::file::ENUM_TYPE => {
@@ -52,7 +52,7 @@ impl PathedChilds for FileDescriptor {
                 if path.is_empty() {
                     Some(PathedDescriptor::Enum(enum_))
                 } else {
-                    self.get_child_from_path(path)
+                    enum_.get_child_from_path(path)
                 }
             }
             tag::file::SERVICE => {
@@ -60,7 +60,7 @@ impl PathedChilds for FileDescriptor {
                 if path.is_empty() {
                     Some(PathedDescriptor::Service(service))
                 } else {
-                    self.get_child_from_path(path)
+                    service.get_child_from_path(path)
                 }
             }
             tag::file::EXTENSION => {
