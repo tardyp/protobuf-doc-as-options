@@ -4,31 +4,31 @@ import "doc.proto";
 
 // This is a message documentation.
 message MyMessage {
-    option (doc.message_description) = "This is a message documentation.";
+    
     // This is a field documentation.
-    string my_field = 1 [(doc.field_description) = "This is a field documentation."];
+    string my_field = 1 ;
 
     // This is an enum documentation.
     enum MyEnum {
-        option (doc.enum_description) = "This is an enum documentation.";
+        
         // This is an enum value documentation.
-        MY_ENUM_VALUE = 0 [(doc.litteral_description) = "This is an enum value documentation."];
+        MY_ENUM_VALUE = 0 ;
     }
     // This is a nested message documentation.
     message MyMessageNested {
-        option (doc.message_description) = "This is a nested message documentation.";
+        
         // This is a field documentation2.
-        string my_field = 1 [(doc.field_description) = "This is a field documentation2."];
+        string my_field = 1 ;
         // This is a nested2 message documentation.
         message MyMessageNested2 {
-            option (doc.message_description) = "This is a nested2 message documentation.";
+            
             // This is a field2 documentation.
-            string my_field = 1 [(doc.field_description) = "This is a field2 documentation."];
+            string my_field = 1 ;
             // This is a nested3 message documentation.
             message MyMessageNested3 {
-                option (doc.message_description) = "This is a nested3 message documentation.";
+                
                 // This is a field3 documentation.
-                string my_field = 1 [(doc.field_description) = "This is a field3  documentation."];
+                string my_field = 1 ;
             }
         }
     }

@@ -4,11 +4,13 @@ use std::{io::Write, path::PathBuf};
 
 use clap::Parser;
 use miette::IntoDiagnostic;
+use path_resolver::{tag, PathedChilds, PathedDescriptor};
 use prost_reflect::{
-    prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor
+    prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor,
+    ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
+    ServiceDescriptor, Value,
 };
 use protox::Compiler;
-use path_resolver::PathedChilds;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
@@ -94,23 +96,79 @@ fn insert_comments(
         .unwrap();
     // need to insert in reverse order
     let mut insertions = Vec::new();
+    let mut to_remove = Vec::new();
     for loc in source_info.location.iter() {
         let start_line = loc.span[0] as usize;
         let start_col = loc.span[1] as usize;
         let start = offsets[start_line] + start_col;
-        if let Some(comment) = get_comment(fd, loc) {
-            let spaces = &in_text[start - start_col..start];
-            insertions.push((start, format_comment(comment, spaces)));
+        if let Some(pathed) = fd.get_child_from_loc(loc) {
+            if let Some(ext) = get_description(&pathed) {
+                let spaces = &in_text[start - start_col..start];
+                let comment = ext.value.as_str().unwrap().to_string();
+                let mut to_remove_path = loc.path.clone();
+                to_remove_path.push(get_option(&pathed));
+                to_remove_path.push(ext.desc.number() as i32);
+                to_remove.push(to_remove_path);
+                insertions.push((start, format_comment(comment, spaces)));
+            }
         }
     }
+    let mut to_remove_spans = to_remove
+        .iter()
+        .filter_map(|path| {
+            for loc in source_info.location.iter() {
+                if loc.path == *path {
+                    let span = &loc.span;
+                    let start_line = span[0] as usize;
+                    let start_col = span[1] as usize;
+                    let (end_line, end_col) =
+                    match span.len() {
+                        3 => (span[0] as usize, span[2] as usize),
+                        4 => (span[2] as usize, span[3] as usize),
+                        _ => return None,
+                    };
+                    let start = offsets[start_line] + start_col;
+                    let end = offsets[end_line] + end_col;
+                    return Some((start, end));
+                }
+            }
+            None
+        }).collect::<Vec<_>>();
     insertions.sort_by_key(|(start, _)| *start);
+    to_remove_spans.sort_by_key(|(start, _)| *start);
     let mut last = 0;
+    let mut to_remove_spans = to_remove_spans.into_iter();
+    let mut to_remove_span = to_remove_spans.next();
     for (start, text) in insertions.into_iter() {
-        out.write_all(&in_text[last..start].as_bytes()).into_diagnostic()?;
+        while let Some((mut remove_start, mut remove_end)) = to_remove_span {
+            if in_text.as_bytes()[remove_start-1] == b'[' && in_text.as_bytes()[remove_end] == b']' {
+                (remove_start, remove_end) = (remove_start-1, remove_end+1);
+            }
+            if remove_start < start {
+                out.write_all(&in_text[last..remove_start].as_bytes())
+                    .into_diagnostic()?;
+                last = remove_end;
+                to_remove_span = to_remove_spans.next();
+            } else {
+                break;
+            }
+        }
+        out.write_all(&in_text[last..start].as_bytes())
+            .into_diagnostic()?;
         last = start;
         out.write_all(text.as_bytes()).into_diagnostic()?;
     }
-    out.write_all(&in_text[last..].as_bytes()).into_diagnostic()?;
+    while let Some((mut remove_start, mut remove_end)) = to_remove_span {
+        if in_text.as_bytes()[remove_start-1] == b'[' && in_text.as_bytes()[remove_end] == b']' {
+            (remove_start, remove_end) = (remove_start-1, remove_end+1);
+        }
+    out.write_all(&in_text[last..remove_start].as_bytes())
+            .into_diagnostic()?;
+        last = remove_end;
+        to_remove_span = to_remove_spans.next();
+    }
+    out.write_all(&in_text[last..].as_bytes())
+        .into_diagnostic()?;
     Ok(())
 }
 
@@ -144,39 +202,61 @@ fn format_comment(comment: String, spaces: &str) -> String {
     formatted
 }
 
-trait Commented {
-    fn get_comment(&self) -> Option<String>;
+struct Ext {
+    desc: ExtensionDescriptor,
+    value: Value,
 }
-impl Commented for DynamicMessage {
-    fn get_comment(&self) -> Option<String> {
-        println!("extensions names: {:?}", self.extensions().map(|ext| ext.0.name().to_string()).collect::<Vec<_>>());
+
+trait Described {
+    fn get_description(&self) -> Option<Ext>;
+}
+impl Described for DynamicMessage {
+    fn get_description(&self) -> Option<Ext> {
         self.extensions()
-            .find(|ext| ext.0.name().ends_with("description"))?
-            .1
-            .as_str()
-            .map(|s| s.to_string())
+            .find(|ext| ext.0.name().ends_with("description"))
+            .map(|(ed, v)| Ext {
+                desc: ed,
+                value: v.clone(),
+            })
     }
 }
 macro_rules! impl_commented {
     ($($t:ty),*) => {
-        $(impl Commented for $t {
-            fn get_comment(&self) -> Option<String> {
-                self.options().get_comment()
+        $(impl Described for $t {
+            fn get_description(&self) -> Option<Ext> {
+                self.options().get_description()
             }
         })*
     };
 }
-impl_commented!(MessageDescriptor, EnumDescriptor, EnumValueDescriptor, FieldDescriptor, ServiceDescriptor, MethodDescriptor);
-fn get_comment(fd: &FileDescriptor, loc: &source_code_info::Location) -> Option<String> {
-    let pathed = fd.get_child_from_loc(loc)?;
+impl_commented!(
+    MessageDescriptor,
+    EnumDescriptor,
+    EnumValueDescriptor,
+    FieldDescriptor,
+    ServiceDescriptor,
+    MethodDescriptor
+);
+fn get_description(pathed: &PathedDescriptor) -> Option<Ext> {
     match pathed {
-        path_resolver::PathedDescriptor::Message(m) => m.get_comment(),
-        path_resolver::PathedDescriptor::Enum(e) => e.get_comment(),
-        path_resolver::PathedDescriptor::Service(s) => s.get_comment(),
-        path_resolver::PathedDescriptor::Method(m) => m.get_comment(),
-        path_resolver::PathedDescriptor::Field(f) => f.get_comment(),
-        path_resolver::PathedDescriptor::EnumValue(e) => e.get_comment(),
-        _ => None        
+        PathedDescriptor::Message(m) => m.get_description(),
+        PathedDescriptor::Enum(e) => e.get_description(),
+        PathedDescriptor::Service(s) => s.get_description(),
+        PathedDescriptor::Method(m) => m.get_description(),
+        PathedDescriptor::Field(f) => f.get_description(),
+        PathedDescriptor::EnumValue(e) => e.get_description(),
+        _ => None,
+    }
+}
+fn get_option(pathed: &PathedDescriptor) -> i32 {
+    match pathed {
+        PathedDescriptor::Message(_) => tag::message::OPTIONS,
+        PathedDescriptor::Enum(_) => tag::enum_::OPTIONS,
+        PathedDescriptor::Service(_) => tag::service::OPTIONS,
+        PathedDescriptor::Method(_) => tag::method::OPTIONS,
+        PathedDescriptor::Field(_) => tag::field::OPTIONS,
+        PathedDescriptor::EnumValue(_) => tag::enum_value::OPTIONS,
+        _ => 0,
     }
 }
 
@@ -211,7 +291,7 @@ mod test {
         entry_point(args).unwrap();
         let expected_path = fixtures.join(fixture).with_extension("expected.proto");
         let actual = std::fs::read_to_string(temp_output_dir.join(fixture)).unwrap();
-        // std::fs::remove_file(expected_path.clone()).unwrap();
+        std::fs::remove_file(expected_path.clone()).unwrap();
         if expected_path.exists() {
             let expected = std::fs::read_to_string(expected_path).unwrap();
             assert_eq!(expected, actual);

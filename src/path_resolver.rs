@@ -6,7 +6,7 @@ use prost_reflect::{
 
 use std::collections::VecDeque;
 #[allow(dead_code)]
-mod tag;
+pub(crate)mod tag;
 pub(crate) enum PathedDescriptor {
     Message(MessageDescriptor),
     Enum(EnumDescriptor),
