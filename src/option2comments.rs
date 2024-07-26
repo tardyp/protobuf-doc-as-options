@@ -1,14 +1,14 @@
 mod path_resolver;
+mod editor;
 
-use std::{io::Write, path::PathBuf};
+use std::{io::Write, path::{self, PathBuf}};
 
 use clap::Parser;
+use editor::Editor;
 use miette::IntoDiagnostic;
 use path_resolver::{tag, PathedChilds, PathedDescriptor};
 use prost_reflect::{
-    prost_types::source_code_info, DynamicMessage, EnumDescriptor, EnumValueDescriptor,
-    ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
-    ServiceDescriptor, Value,
+    prost_types::SourceCodeInfo, DynamicMessage, EnumDescriptor, EnumValueDescriptor, ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor, Value
 };
 use protox::Compiler;
 
@@ -74,33 +74,21 @@ fn entry_point(args: Args) -> miette::Result<()> {
     }
     Ok(())
 }
-fn get_lines_offsets(text: &str) -> Vec<usize> {
-    let mut offsets = Vec::new();
-    let mut offset = 0;
-    for line in text.lines() {
-        offsets.push(offset);
-        offset += line.len() + 1;
-    }
-    offsets
-}
 fn insert_comments(
     fd: &FileDescriptor,
     in_text: &str,
     out: &mut std::fs::File,
 ) -> miette::Result<()> {
-    let offsets = get_lines_offsets(&in_text);
     let source_info = fd
         .file_descriptor_proto()
         .source_code_info
         .as_ref()
         .unwrap();
-    // need to insert in reverse order
-    let mut insertions = Vec::new();
-    let mut to_remove = Vec::new();
+    let mut editor = Editor::new(in_text.to_string());
     for loc in source_info.location.iter() {
         let start_line = loc.span[0] as usize;
         let start_col = loc.span[1] as usize;
-        let start = offsets[start_line] + start_col;
+        let start = editor.get_position(start_line, start_col);
         if let Some(pathed) = fd.get_child_from_loc(loc) {
             if let Some(ext) = get_description(&pathed) {
                 let spaces = &in_text[start - start_col..start];
@@ -108,70 +96,77 @@ fn insert_comments(
                 let mut to_remove_path = loc.path.clone();
                 to_remove_path.push(get_option(&pathed));
                 to_remove_path.push(ext.desc.number() as i32);
-                to_remove.push(to_remove_path);
-                insertions.push((start, format_comment(comment, spaces)));
+                let (position, length) = find_to_delete_span(&editor, &source_info, &to_remove_path);
+                let (position, length) = match pathed {
+                    PathedDescriptor::Field(_) |
+                    PathedDescriptor::EnumValue(_) => {
+                        let (start, len) = eat_syntax_aroud(&editor, position, length);
+                        (start, len)
+                    }
+                    _ => (position, length),
+                };
+                editor.delete(position, length);
+                editor.insert(start, format_comment(comment, spaces));
             }
         }
     }
-    let mut to_remove_spans = to_remove
-        .iter()
-        .filter_map(|path| {
-            for loc in source_info.location.iter() {
-                if loc.path == *path {
-                    let span = &loc.span;
-                    let start_line = span[0] as usize;
-                    let start_col = span[1] as usize;
-                    let (end_line, end_col) =
-                    match span.len() {
-                        3 => (span[0] as usize, span[2] as usize),
-                        4 => (span[2] as usize, span[3] as usize),
-                        _ => return None,
-                    };
-                    let start = offsets[start_line] + start_col;
-                    let end = offsets[end_line] + end_col;
-                    return Some((start, end));
-                }
-            }
-            None
-        }).collect::<Vec<_>>();
-    insertions.sort_by_key(|(start, _)| *start);
-    to_remove_spans.sort_by_key(|(start, _)| *start);
-    let mut last = 0;
-    let mut to_remove_spans = to_remove_spans.into_iter();
-    let mut to_remove_span = to_remove_spans.next();
-    for (start, text) in insertions.into_iter() {
-        while let Some((mut remove_start, mut remove_end)) = to_remove_span {
-            if in_text.as_bytes()[remove_start-1] == b'[' && in_text.as_bytes()[remove_end] == b']' {
-                (remove_start, remove_end) = (remove_start-1, remove_end+1);
-            }
-            if remove_start < start {
-                out.write_all(&in_text[last..remove_start].as_bytes())
-                    .into_diagnostic()?;
-                last = remove_end;
-                to_remove_span = to_remove_spans.next();
-            } else {
-                break;
-            }
-        }
-        out.write_all(&in_text[last..start].as_bytes())
-            .into_diagnostic()?;
-        last = start;
-        out.write_all(text.as_bytes()).into_diagnostic()?;
-    }
-    while let Some((mut remove_start, mut remove_end)) = to_remove_span {
-        if in_text.as_bytes()[remove_start-1] == b'[' && in_text.as_bytes()[remove_end] == b']' {
-            (remove_start, remove_end) = (remove_start-1, remove_end+1);
-        }
-    out.write_all(&in_text[last..remove_start].as_bytes())
-            .into_diagnostic()?;
-        last = remove_end;
-        to_remove_span = to_remove_spans.next();
-    }
-    out.write_all(&in_text[last..].as_bytes())
-        .into_diagnostic()?;
+    editor.apply();
+    out.write_all(editor.text().as_bytes()).into_diagnostic()?;
     Ok(())
 }
 
+fn find_to_delete_span(editor: &Editor, source_info: &&SourceCodeInfo, to_remove_path: &[i32]) -> (usize, usize) {
+    for loc in source_info.location.iter() {
+        if loc.path == *to_remove_path {
+            let span = &loc.span;
+            let start_line = span[0] as usize;
+            let start_col = span[1] as usize;
+            let (end_line, end_col) =
+                match span.len() {
+                    3 => (span[0] as usize, span[2] as usize),
+                    4 => (span[2] as usize, span[3] as usize),
+                    _ => return (0, 0),
+                };
+            let mut start = editor.get_position(start_line, start_col);
+            let mut end = editor.get_position(end_line, end_col);
+
+            return (start, end - start);
+        }
+    }
+    (0, 0)
+}
+
+fn eat_syntax_aroud(editor: &Editor, mut start:usize, len:usize)  -> (usize, usize) {
+    let mut end = start + len;
+    // eat syntax around (whitespace, commas, etc)
+    // and option brackets if they are remaining alone
+    while start > 0 {
+        match editor.char_at(start - 1) {
+            Some('\n') |
+            Some(' ') |
+            Some(',') |
+            Some('\t') =>
+                start -= 1,
+            None | _ => break,
+        
+        }
+    }
+    while end < editor.text().len() {
+        match editor.char_at(end) {
+            Some('\n') |
+            Some(' ') |
+            Some('\t') =>
+                end += 1,
+            None | _ => break,
+        
+        }
+    }
+    if editor.char_at(start-1) == Some('[') && editor.char_at(end) == Some(']') {
+        start -= 1;
+        end += 1;
+    }
+    (start, end - start)
+}
 /// Format a comment to fit within 100 characters
 /// and add the correct padding
 fn format_comment(comment: String, spaces: &str) -> String {
@@ -264,12 +259,6 @@ fn get_option(pathed: &PathedDescriptor) -> i32 {
 mod test {
     use super::*;
     use rand;
-    #[test]
-    fn test_get_lines_offsets() {
-        let text = "a\nb\nc";
-        let offsets = get_lines_offsets(text);
-        assert_eq!(offsets, vec![0, 2, 4]);
-    }
     #[test]
     fn test_format_comment() {
         let comment = "This is a long comment that should be split into multiple lines to fit within 100 characters".to_string();
