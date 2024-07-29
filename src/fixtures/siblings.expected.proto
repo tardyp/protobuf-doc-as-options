@@ -1,0 +1,41 @@
+syntax = "proto3";
+package test;
+import "doc.proto";
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.MessageOptions {
+    string stuff = 50000;
+}
+extend google.protobuf.FieldOptions {
+    string field_stuff = 50001;
+    string field_stuff2 = 50002;
+}
+// This is a message documentation.
+message MyMessage {
+    option (stuff) = "This is a some stuff";
+    
+    // This is a field documentation.
+    string my_field = 1 ;
+
+    // This is an enum documentation.
+    enum MyEnum {
+        
+        // This is an enum value documentation.
+        MY_ENUM_VALUE = 0 ;
+    }
+    // This is a nested message documentation.
+    message MyMessageNested {
+        
+        // This is a field documentation2.
+        string my_field = 1 [,
+                             (field_stuff) = "This is a field stuff."];
+        // This is a field documentation2.
+        string my_field2 = 2 [
+        (field_stuff) = "This is a field stuff."];
+        // This is a field documentation2.
+        string my_field3 = 3 [
+        (field_stuff) = "This is a field stuff.",
+        (field_stuff2) = "This is a field stuff."
+        ];
+    }
+}

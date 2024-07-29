@@ -1,14 +1,19 @@
-mod path_resolver;
 mod editor;
+mod path_resolver;
 
-use std::{io::Write, path::{self, PathBuf}};
+use std::{
+    io::Write,
+    path::PathBuf,
+};
 
 use clap::Parser;
 use editor::Editor;
 use miette::IntoDiagnostic;
 use path_resolver::{tag, PathedChilds, PathedDescriptor};
 use prost_reflect::{
-    prost_types::SourceCodeInfo, DynamicMessage, EnumDescriptor, EnumValueDescriptor, ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor, ServiceDescriptor, Value
+    prost_types::SourceCodeInfo, DynamicMessage, EnumDescriptor, EnumValueDescriptor,
+    ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
+    ServiceDescriptor, Value,
 };
 use protox::Compiler;
 
@@ -96,11 +101,11 @@ fn insert_comments(
                 let mut to_remove_path = loc.path.clone();
                 to_remove_path.push(get_option(&pathed));
                 to_remove_path.push(ext.desc.number() as i32);
-                let (position, length) = find_to_delete_span(&editor, &source_info, &to_remove_path);
+                let (position, length) =
+                    find_to_delete_span(&editor, &source_info, &to_remove_path);
                 let (position, length) = match pathed {
-                    PathedDescriptor::Field(_) |
-                    PathedDescriptor::EnumValue(_) => {
-                        let (start, len) = eat_syntax_aroud(&editor, position, length);
+                    PathedDescriptor::Field(_) | PathedDescriptor::EnumValue(_) => {
+                        let (start, len) = eat_syntax_around(&editor, position, length);
                         (start, len)
                     }
                     _ => (position, length),
@@ -115,18 +120,21 @@ fn insert_comments(
     Ok(())
 }
 
-fn find_to_delete_span(editor: &Editor, source_info: &&SourceCodeInfo, to_remove_path: &[i32]) -> (usize, usize) {
+fn find_to_delete_span(
+    editor: &Editor,
+    source_info: &&SourceCodeInfo,
+    to_remove_path: &[i32],
+) -> (usize, usize) {
     for loc in source_info.location.iter() {
         if loc.path == *to_remove_path {
             let span = &loc.span;
             let start_line = span[0] as usize;
             let start_col = span[1] as usize;
-            let (end_line, end_col) =
-                match span.len() {
-                    3 => (span[0] as usize, span[2] as usize),
-                    4 => (span[2] as usize, span[3] as usize),
-                    _ => return (0, 0),
-                };
+            let (end_line, end_col) = match span.len() {
+                3 => (span[0] as usize, span[2] as usize),
+                4 => (span[2] as usize, span[3] as usize),
+                _ => return (0, 0),
+            };
             let mut start = editor.get_position(start_line, start_col);
             let mut end = editor.get_position(end_line, end_col);
 
@@ -136,32 +144,23 @@ fn find_to_delete_span(editor: &Editor, source_info: &&SourceCodeInfo, to_remove
     (0, 0)
 }
 
-fn eat_syntax_aroud(editor: &Editor, mut start:usize, len:usize)  -> (usize, usize) {
+fn eat_syntax_around(editor: &Editor, mut start: usize, len: usize) -> (usize, usize) {
     let mut end = start + len;
     // eat syntax around (whitespace, commas, etc)
     // and option brackets if they are remaining alone
     while start > 0 {
         match editor.char_at(start - 1) {
-            Some('\n') |
-            Some(' ') |
-            Some(',') |
-            Some('\t') =>
-                start -= 1,
+            Some('\n') | Some(' ') | Some(',') | Some('\t') => start -= 1,
             None | _ => break,
-        
         }
     }
     while end < editor.text().len() {
         match editor.char_at(end) {
-            Some('\n') |
-            Some(' ') |
-            Some('\t') =>
-                end += 1,
+            Some('\n') | Some(' ') | Some('\t') => end += 1,
             None | _ => break,
-        
         }
     }
-    if editor.char_at(start-1) == Some('[') && editor.char_at(end) == Some(']') {
+    if editor.char_at(start - 1) == Some('[') && editor.char_at(end) == Some(']') {
         start -= 1;
         end += 1;
     }
@@ -266,6 +265,19 @@ mod test {
         let formatted = format_comment(comment, spaces);
         assert_eq!(formatted.lines().count(), 2);
     }
+    fn eat_around_test(text: &str, expected: &str) {
+        let a_position = text.find('A').unwrap();
+        let mut editor = Editor::new(text.to_string());
+        let (start, len) = eat_syntax_around(&editor, a_position, 1);
+        editor.delete(start, len);
+        editor.apply();
+        assert_eq!(editor.text(), expected);
+    }
+    #[test]
+    fn test_eat_syntax_around() {
+        eat_around_test("xx  A  xx", "xxxx");
+        eat_around_test("xx  [A]  xx", "xx    xx");
+    }
 
     fn run_fixture_test(fixture: &str) {
         let mut fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -280,14 +292,17 @@ mod test {
         entry_point(args).unwrap();
         let expected_path = fixtures.join(fixture).with_extension("expected.proto");
         let actual = std::fs::read_to_string(temp_output_dir.join(fixture)).unwrap();
-        std::fs::remove_file(expected_path.clone()).unwrap();
+        // std::fs::remove_file(expected_path.clone()).unwrap();
         if expected_path.exists() {
-            let expected = std::fs::read_to_string(expected_path).unwrap();
+            let expected = std::fs::read_to_string(&expected_path).unwrap();
             assert_eq!(expected, actual);
         } else {
             // if it is not present, write expected file from generation
-            std::fs::write(expected_path, actual).unwrap();
+            std::fs::write(&expected_path, actual).unwrap();
         }
+        // run the compilation again to check if the generated file is compilable
+        let mut c = Compiler::new(vec![fixtures.clone()]).unwrap();
+        c.open_file(&expected_path).expect("compilation failed");
         std::fs::remove_dir_all(temp_output_dir).unwrap();
     }
     #[test]
@@ -297,5 +312,9 @@ mod test {
     #[test]
     fn test_nested() {
         run_fixture_test("nested.proto");
+    }
+    #[test]
+    fn test_siblings() {
+        run_fixture_test("siblings.proto");
     }
 }

@@ -99,6 +99,9 @@ impl Editor{
     pub(crate) fn text(&self) -> &str {
         &self.text
     }
+    pub(crate) fn len(&self) -> usize {
+        self.text.len()
+    }
     pub(crate) fn char_at(&self, position: usize) -> Option<char> {
         self.text.chars().nth(position)
     }
