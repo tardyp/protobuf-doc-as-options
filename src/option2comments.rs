@@ -40,7 +40,7 @@ pub struct Args {
 pub fn entry_point(args: Args) -> miette::Result<()> {
     let first_include = args
         .includes
-        .get(0)
+        .first()
         .expect("at least one include dir is expected")
         .clone();
     let mut compiler = Compiler::new(args.includes)?;
@@ -145,7 +145,7 @@ fn find_to_delete_span(
     (0, 0)
 }
 fn skip_regex(regex: &Regex, text: &str) -> usize {
-    if let Some(match_) = regex.find(&text) {
+    if let Some(match_) = regex.find(text) {
         match_.end()
     } else {
         0
@@ -164,15 +164,15 @@ fn eat_syntax_around(editor: &Editor, start: usize, len: usize) -> (usize, usize
     start -= skipped;
     // Look for trailing whitespace, commas, and tabs
     end += skip_regex(&Regex::new(r"^[\s]+").unwrap(), &text[end..]);
-    if reverse.starts_with("[") {
+    if reverse.starts_with('[') {
         end += skip_regex(&Regex::new(r"^[\s\,]*").unwrap(), &text[end..]);
-        if text[end..].starts_with("]") {
+        if text[end..].starts_with(']') {
             end += 1;
             start -= 1;
             reverse = &reverse[1..];
         }
     }
-    start -= skip_regex(&Regex::new(r"^[\s]+").unwrap(), &reverse);
+    start -= skip_regex(&Regex::new(r"^[\s]+").unwrap(), reverse);
     end += skip_regex(&Regex::new(r"^[\s]+").unwrap(), &text[end..]);
     (start, end - start)
 }
@@ -200,7 +200,7 @@ fn format_comment(comment: String, spaces: &str) -> String {
             formatted.push_str(spaces);
         }
         formatted.push_str("// ");
-        formatted.push_str(&line);
+        formatted.push_str(line);
         formatted.push('\n');
     }
     formatted.push_str(spaces);

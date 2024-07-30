@@ -30,15 +30,12 @@ pub fn comments2option(res: &[u8], ids: &DescriptionIds) -> miette::Result<Vec<u
                 continue;
             };
             let comments = comments.trim().to_string();
-            match file.get_child_from_loc(loc) {
-                Some(pathed) => {
-                    insert_comment(pathed, comments, ids);
-                }
-                None => {}
+            if let Some(pathed) = file.get_child_from_loc(loc) {
+                insert_comment(pathed, comments, ids);
             }
         }
     }
-    Ok(res.write_to_bytes().into_diagnostic()?)
+    res.write_to_bytes().into_diagnostic()
 }
 macro_rules! insert_comment {
     ($x: ident, $comment: ident, $id: expr) => {
