@@ -16,6 +16,7 @@ use prost_reflect::{
     ServiceDescriptor, Value,
 };
 use protox::Compiler;
+use regex::Regex;
 
 #[derive(Debug, clap::Parser)]
 pub struct Args {
@@ -144,26 +145,36 @@ fn find_to_delete_span(
     (0, 0)
 }
 
-fn eat_syntax_around(editor: &Editor, mut start: usize, len: usize) -> (usize, usize) {
+fn eat_syntax_around(editor: &Editor, start: usize, len: usize) -> (usize, usize) {
+    let text = editor.text();
+    let mut start = start;
     let mut end = start + len;
-    // eat syntax around (whitespace, commas, etc)
-    // and option brackets if they are remaining alone
-    while start > 0 {
-        match editor.char_at(start - 1) {
-            Some('\n') | Some(' ') | Some(',') | Some('\t') => start -= 1,
-            None | _ => break,
+
+    // Reverse the substring before the start position to look for leading whitespace, commas, and tabs
+    let reverse = text[..start].chars().rev().collect::<String>();
+    fn skip_regex(regex: &Regex, text: &str) -> usize {
+        if let Some(match_) = regex.find(&text) {
+            match_.end()
+        } else {
+            0
         }
     }
-    while end < editor.text().len() {
-        match editor.char_at(end) {
-            Some('\n') | Some(' ') | Some('\t') => end += 1,
-            None | _ => break,
+    // Eat leading whitespace, commas, and tabs
+    let skipped = skip_regex(&Regex::new(r"^[\s,]+").unwrap(), &reverse);
+    let mut reverse = &reverse[skipped..];
+    start -= skipped;
+    // Look for trailing whitespace, commas, and tabs
+    end += skip_regex(&Regex::new(r"^[\s]+").unwrap(), &text[end..]);
+    if reverse.starts_with("[") {
+        end += skip_regex(&Regex::new(r"^[\s\,]*").unwrap(), &text[end..]);
+        if text[end..].starts_with("]") {
+            end += 1;
+            start -= 1;
+            reverse = &reverse[1..];
         }
     }
-    if editor.char_at(start - 1) == Some('[') && editor.char_at(end) == Some(']') {
-        start -= 1;
-        end += 1;
-    }
+    start -= skip_regex(&Regex::new(r"^[\s]+").unwrap(), &reverse);
+    end += skip_regex(&Regex::new(r"^[\s]+").unwrap(), &text[end..]);
     (start, end - start)
 }
 /// Format a comment to fit within 100 characters
@@ -266,6 +277,7 @@ mod test {
         assert_eq!(formatted.lines().count(), 2);
     }
     fn eat_around_test(text: &str, expected: &str) {
+        println!("text: {}", text);
         let a_position = text.find('A').unwrap();
         let mut editor = Editor::new(text.to_string());
         let (start, len) = eat_syntax_around(&editor, a_position, 1);
@@ -275,8 +287,13 @@ mod test {
     }
     #[test]
     fn test_eat_syntax_around() {
-        eat_around_test("xx  A  xx", "xxxx");
-        eat_around_test("xx  [A]  xx", "xx    xx");
+        eat_around_test("xx  A  yy", "xxyy");
+        eat_around_test("xx  [A]  yy", "xxyy");
+        eat_around_test("xx  [ A ]  yy", "xxyy");
+        eat_around_test("xx  [,A,]  yy", "xxyy");
+        eat_around_test("xx  [A,B]  yy", "xx  [B]  yy");
+        eat_around_test("xx  [B,A]  yy", "xx  [B]  yy");
+        eat_around_test("xx  [B,A,C]  yy", "xx  [B,C]  yy");
     }
 
     fn run_fixture_test(fixture: &str) {

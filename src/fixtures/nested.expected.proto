@@ -6,29 +6,29 @@ import "doc.proto";
 message MyMessage {
     
     // This is a field documentation.
-    string my_field = 1 ;
+    string my_field = 1;
 
     // This is an enum documentation.
     enum MyEnum {
         
         // This is an enum value documentation.
-        MY_ENUM_VALUE = 0 ;
+        MY_ENUM_VALUE = 0;
     }
     // This is a nested message documentation.
     message MyMessageNested {
         
         // This is a field documentation2.
-        string my_field = 1 ;
+        string my_field = 1;
         // This is a nested2 message documentation.
         message MyMessageNested2 {
             
             // This is a field2 documentation.
-            string my_field = 1 ;
+            string my_field = 1;
             // This is a nested3 message documentation.
             message MyMessageNested3 {
                 
                 // This is a field3 documentation.
-                string my_field = 1 ;
+                string my_field = 1;
             }
         }
     }

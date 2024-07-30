@@ -15,20 +15,19 @@ message MyMessage {
     option (stuff) = "This is a some stuff";
     
     // This is a field documentation.
-    string my_field = 1 ;
+    string my_field = 1;
 
     // This is an enum documentation.
     enum MyEnum {
         
         // This is an enum value documentation.
-        MY_ENUM_VALUE = 0 ;
+        MY_ENUM_VALUE = 0;
     }
     // This is a nested message documentation.
     message MyMessageNested {
         
         // This is a field documentation2.
-        string my_field = 1 [,
-                             (field_stuff) = "This is a field stuff."];
+        string my_field = 1 [(field_stuff) = "This is a field stuff."];
         // This is a field documentation2.
         string my_field2 = 2 [
         (field_stuff) = "This is a field stuff."];
