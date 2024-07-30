@@ -18,7 +18,7 @@ message MyMessage {
             string my_field = 1 [(doc.field_description) = "This is a field2 documentation."];
             message MyMessageNested3 {
                 option (doc.message_description) = "This is a nested3 message documentation.";
-                string my_field = 1 [(doc.field_description) = "This is a field3  documentation."];
+                string my_field = 1 [(doc.field_description) = "This is a field3 documentation."];
             }
         }
     }

@@ -1,12 +1,9 @@
-mod editor;
-mod path_resolver;
 
 use std::{io::Write, path::PathBuf};
 
-use clap::Parser;
-use editor::Editor;
+use crate::editor::Editor;
 use miette::IntoDiagnostic;
-use path_resolver::{tag, prost::PathedChilds, prost::PathedDescriptor};
+use crate::path_resolver::{tag, prost::PathedChilds, prost::PathedDescriptor};
 use prost_reflect::{
     prost_types::SourceCodeInfo, DynamicMessage, EnumDescriptor, EnumValueDescriptor,
     ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
@@ -40,11 +37,7 @@ pub struct Args {
     )]
     output: Option<PathBuf>,
 }
-fn main() -> miette::Result<()> {
-    miette::set_panic_hook();
-    entry_point(Args::parse())
-}
-fn entry_point(args: Args) -> miette::Result<()> {
+pub fn entry_point(args: Args) -> miette::Result<()> {
     let first_include = args
         .includes
         .get(0)
@@ -183,6 +176,7 @@ fn eat_syntax_around(editor: &Editor, start: usize, len: usize) -> (usize, usize
     end += skip_regex(&Regex::new(r"^[\s]+").unwrap(), &text[end..]);
     (start, end - start)
 }
+
 /// Format a comment to fit within 100 characters
 /// and add the correct padding
 fn format_comment(comment: String, spaces: &str) -> String {
