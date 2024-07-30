@@ -1,10 +1,7 @@
 mod editor;
 mod path_resolver;
 
-use std::{
-    io::Write,
-    path::PathBuf,
-};
+use std::{io::Write, path::PathBuf};
 
 use clap::Parser;
 use editor::Editor;
@@ -109,7 +106,17 @@ fn insert_comments(
                         let (start, len) = eat_syntax_around(&editor, position, length);
                         (start, len)
                     }
-                    _ => (position, length),
+                    _ => {
+                        // skip white space after
+                        (
+                            position,
+                            length
+                                + skip_regex(
+                                    &Regex::new(r"[\s]+").unwrap(),
+                                    &editor.text()[position + length..],
+                                ),
+                        )
+                    }
                 };
                 editor.delete(position, length);
                 editor.insert(start, format_comment(comment, spaces));
@@ -144,7 +151,13 @@ fn find_to_delete_span(
     }
     (0, 0)
 }
-
+fn skip_regex(regex: &Regex, text: &str) -> usize {
+    if let Some(match_) = regex.find(&text) {
+        match_.end()
+    } else {
+        0
+    }
+}
 fn eat_syntax_around(editor: &Editor, start: usize, len: usize) -> (usize, usize) {
     let text = editor.text();
     let mut start = start;
@@ -152,13 +165,6 @@ fn eat_syntax_around(editor: &Editor, start: usize, len: usize) -> (usize, usize
 
     // Reverse the substring before the start position to look for leading whitespace, commas, and tabs
     let reverse = text[..start].chars().rev().collect::<String>();
-    fn skip_regex(regex: &Regex, text: &str) -> usize {
-        if let Some(match_) = regex.find(&text) {
-            match_.end()
-        } else {
-            0
-        }
-    }
     // Eat leading whitespace, commas, and tabs
     let skipped = skip_regex(&Regex::new(r"^[\s,]+").unwrap(), &reverse);
     let mut reverse = &reverse[skipped..];
