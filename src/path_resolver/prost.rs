@@ -3,10 +3,9 @@ use prost_reflect::{
     ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
     OneofDescriptor, ServiceDescriptor, Value,
 };
+use super::tag;
 
 use std::collections::VecDeque;
-#[allow(dead_code)]
-pub(crate)mod tag;
 pub(crate) enum PathedDescriptor {
     Message(MessageDescriptor),
     Enum(EnumDescriptor),

@@ -7,12 +7,17 @@ edition = "2021"
 [[bin]]
 name = "option2comments"
 path = "src/option2comments.rs"
+[[bin]]
+name = "comments2option"
+path = "src/comments2option_cli.rs"
 
 [dependencies]
 clap = { version = "4.5.9", features = ["derive"] }
 glob = "0.3.1"
 miette = { version = "7.2.0", features = ["fancy"] }
+pretty_assertions = "1.4.0"
 prost-reflect = { version = "0.14.0", features = ["text-format"] }
+protobuf = "3.5.0"
 protox = "0.7.0"
 regex = "1.10.5"
 shellexpand = "3.1.0"

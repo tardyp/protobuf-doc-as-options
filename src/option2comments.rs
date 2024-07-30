@@ -6,7 +6,7 @@ use std::{io::Write, path::PathBuf};
 use clap::Parser;
 use editor::Editor;
 use miette::IntoDiagnostic;
-use path_resolver::{tag, PathedChilds, PathedDescriptor};
+use path_resolver::{tag, prost::PathedChilds, prost::PathedDescriptor};
 use prost_reflect::{
     prost_types::SourceCodeInfo, DynamicMessage, EnumDescriptor, EnumValueDescriptor,
     ExtensionDescriptor, FieldDescriptor, FileDescriptor, MessageDescriptor, MethodDescriptor,
@@ -143,8 +143,8 @@ fn find_to_delete_span(
                 4 => (span[2] as usize, span[3] as usize),
                 _ => return (0, 0),
             };
-            let mut start = editor.get_position(start_line, start_col);
-            let mut end = editor.get_position(end_line, end_col);
+            let start = editor.get_position(start_line, start_col);
+            let end = editor.get_position(end_line, end_col);
 
             return (start, end - start);
         }

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 #[derive(Debug, Clone)]
 pub struct Insertion {
     position: usize,
@@ -45,10 +43,6 @@ impl Editor{
             text,
             editions: Vec::new(),
         }
-    }
-    pub fn from_path(path: &Path) -> Self {
-        let text = std::fs::read_to_string(path).unwrap();
-        Self::new(text)
     }
     pub fn get_position(&self, line: usize, column: usize) -> usize {
         let line = line.min(self.line_offsets.len() - 1);
@@ -98,12 +92,6 @@ impl Editor{
     
     pub(crate) fn text(&self) -> &str {
         &self.text
-    }
-    pub(crate) fn len(&self) -> usize {
-        self.text.len()
-    }
-    pub(crate) fn char_at(&self, position: usize) -> Option<char> {
-        self.text.chars().nth(position)
     }
 }
 
