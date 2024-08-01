@@ -1,5 +1,4 @@
 use crate::path_resolver::protobuf::{PathedChilds, PathedDescriptor};
-use miette::IntoDiagnostic;
 use protobuf::{descriptor::FileDescriptorSet, Message};
 
 #[derive(Debug, Default)]
@@ -14,8 +13,8 @@ pub struct DescriptionIds {
     pub extension: Option<u32>,
     pub oneof: Option<u32>,
 }
-pub fn comments2option(res: &[u8], ids: &DescriptionIds) -> miette::Result<Vec<u8>> {
-    let mut res = FileDescriptorSet::parse_from_bytes(res).into_diagnostic()?;
+pub fn comments2option(res: &[u8], ids: &DescriptionIds) -> Vec<u8> {
+    let mut res = FileDescriptorSet::parse_from_bytes(res).unwrap();
     for file in &mut res.file {
         if file.name().starts_with("google") {
             continue;
@@ -29,13 +28,14 @@ pub fn comments2option(res: &[u8], ids: &DescriptionIds) -> miette::Result<Vec<u
             } else {
                 continue;
             };
+            let comments = process_markdown_like_whitespace(&comments);        
             let comments = comments.trim().to_string();
             if let Some(pathed) = file.get_child_from_loc(loc) {
                 insert_comment(pathed, comments, ids);
             }
         }
     }
-    res.write_to_bytes().into_diagnostic()
+    res.write_to_bytes().unwrap()
 }
 macro_rules! insert_comment {
     ($x: ident, $comment: ident, $id: expr) => {
@@ -77,7 +77,40 @@ fn insert_comment(pathed: PathedDescriptor, comment: String, ids: &DescriptionId
         }
     }
 }
+fn process_markdown_like_whitespace(input: &str) -> String {
+    let mut result = String::new();
+    let mut iter = input.chars().peekable();
 
+    while let Some(&c) = iter.peek() {
+        if c == '\n' {
+            iter.next(); // Consume the newline
+            if let Some(&next_char) = iter.peek() {
+                match next_char {
+                    '\n' => {
+                        iter.next(); // Consume the second newline
+                        result.push('\n');
+                    }
+                    _ => {
+                        if !result.ends_with(' ') {
+                            result.push(' ');
+                        }
+                    }
+                }
+            } else { // last character
+                result.push(' ');
+            }
+            if iter.peek() == Some(&' ') {
+                iter.next(); // Consume the whitespace
+            }
+
+        } else {
+            result.push(c);
+            iter.next();
+        }
+    }
+
+    result
+}
 
 #[cfg(test)]
 mod tests {
@@ -107,7 +140,7 @@ mod tests {
         c.include_source_info(true);
         c.open_file(path).unwrap();
         let v = c.encode_file_descriptor_set();
-        let res = comments2option(&v, &ids).unwrap();
+        let res = comments2option(&v, &ids);
         let path = fixtures.join(fixture);
         let mut c = Compiler::new(vec![fixtures.clone()]).unwrap();
         c.include_imports(true);
@@ -128,4 +161,9 @@ mod tests {
     fn test_siblings() {
         comments2option_test("siblings.proto");
     }
+    #[test]
+    fn test_multiline() {
+        comments2option_test("multiline.proto");
+    }
+
 }

@@ -1,0 +1,13 @@
+syntax = "proto3";
+package test;
+import "doc.proto";
+
+message MyMessage {
+    option (doc.message_description) = "This is a message documentation. "
+    "This is second line of message documentation."
+    "This is third line of message documentation.";
+    string my_field = 1 [(doc.field_description) = "This is a field documentation."
+    "This is second line of field documentation."
+    "This is third line of field documentation."];
+
+}

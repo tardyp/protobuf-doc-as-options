@@ -334,4 +334,8 @@ mod test {
     fn test_siblings() {
         run_fixture_test("siblings.proto");
     }
+    #[test]
+    fn test_multiline() {
+        run_fixture_test("multiline.proto");
+    }
 }

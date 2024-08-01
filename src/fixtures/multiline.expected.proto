@@ -1,0 +1,12 @@
+syntax = "proto3";
+package test;
+import "doc.proto";
+
+// This is a message documentation. This is second line of message documentation.This is third line
+// of message documentation.
+message MyMessage {
+    // This is a field documentation.This is second line of field documentation.This is third line
+    // of field documentation.
+    string my_field = 1;
+
+}

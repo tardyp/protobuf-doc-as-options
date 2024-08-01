@@ -86,7 +86,7 @@ fn entry_point(args: Args) -> miette::Result<()> {
         }
     }
     let res = compiler.encode_file_descriptor_set();
-    let res = comments2option(&res, &ids)?;
+    let res = comments2option(&res, &ids);
     std::fs::File::create(&args.output).into_diagnostic()?.write_all(&res).into_diagnostic()?;
     Ok(())
 }
