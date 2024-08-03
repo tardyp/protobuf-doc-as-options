@@ -29,9 +29,11 @@ pub struct Editor {
 }
 fn gen_offsets(text: &str) -> Vec<usize> {
     let mut line_offsets = vec![0];
-    for (i, c) in text.chars().enumerate() {
+    let mut i = 0;
+    for c in text.chars() {
+        i += c.len_utf8();
         if c == '\n' {
-            line_offsets.push(i + 1);
+            line_offsets.push(i);
         }
     }
     line_offsets
@@ -47,7 +49,7 @@ impl Editor{
     pub fn get_position(&self, line: usize, column: usize) -> usize {
         let line = line.min(self.line_offsets.len() - 1);
         let line = self.line_offsets[line];
-        let column = column.min(self.text.len() - line);
+        let column = column.min(self.text().len() - line);
         line + column
     }
     pub fn insert(&mut self, position: usize, text: String) {
@@ -115,5 +117,16 @@ mod tests {
         editor.delete(7, 6);
         editor.apply();
         assert_eq!(editor.text, "Goodbye beautiful");
+    }
+    #[test]
+    fn test_gen_offset_emoji() {
+        // for correct slice indexing, we need to use byte offsets
+        // see https://doc.rust-lang.org/std/primitive.str.html#method.get_unchecked
+        let editor = Editor::new("👋\n🌍\ntest".to_string());
+        assert_eq!(editor.get_position(0, 0), 0);
+        assert_eq!(editor.get_position(0, 1), 1);
+        assert_eq!(editor.get_position(1, 0), 5);
+        assert_eq!(editor.get_position(2, 4), editor.text().len());
+        assert_eq!("test", &editor.text()[editor.get_position(2, 0)..]);
     }
 }

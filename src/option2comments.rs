@@ -58,14 +58,16 @@ pub fn entry_point(args: Args) -> miette::Result<()> {
                 .to_path_buf();
             let out_file = out_dir.join(relative.clone());
             std::fs::create_dir_all(out_file.parent().unwrap()).into_diagnostic()?;
-            let in_text = std::fs::read_to_string(&file).into_diagnostic()?;
-            let mut out = std::fs::File::create(out_file).into_diagnostic()?;
-            compiler.open_file(file)?;
+            compiler.open_file(&file)?;
             let fd = compiler
                 .descriptor_pool()
                 .get_file_by_name(&relative.to_string_lossy())
                 .unwrap();
+            let in_text = std::fs::read_to_string(&file).into_diagnostic()?;
+            let mut out = std::fs::File::create(&out_file).into_diagnostic()?;
             insert_comments(&fd, &in_text, &mut out)?;
+            println!("wrote file: {}", out_file.to_string_lossy());
+
         }
     }
     Ok(())
@@ -81,13 +83,15 @@ fn insert_comments(
         .as_ref()
         .unwrap();
     let mut editor = Editor::new(in_text.to_string());
+    let mut count = 0;
     for loc in source_info.location.iter() {
-        let start_line = loc.span[0] as usize;
-        let start_col = loc.span[1] as usize;
-        let start = editor.get_position(start_line, start_col);
         if let Some(pathed) = fd.get_child_from_loc(loc) {
             if let Some(ext) = get_description(&pathed) {
-                let spaces = &in_text[start - start_col..start];
+                count += 1;
+                let start_line = loc.span[0] as usize;
+                let start_col = loc.span[1] as usize;
+                let start = editor.get_position(start_line, start_col);
+                        let spaces = &in_text[start - start_col..start];
                 let comment = ext.value.as_str().unwrap().to_string();
                 let mut to_remove_path = loc.path.clone();
                 to_remove_path.push(get_option(&pathed));
@@ -117,6 +121,7 @@ fn insert_comments(
         }
     }
     editor.apply();
+    println!("inserted {} comments", count);
     out.write_all(editor.text().as_bytes()).into_diagnostic()?;
     Ok(())
 }
@@ -138,7 +143,6 @@ fn find_to_delete_span(
             };
             let start = editor.get_position(start_line, start_col);
             let end = editor.get_position(end_line, end_col);
-
             return (start, end - start);
         }
     }
@@ -207,6 +211,7 @@ fn format_comment(comment: String, spaces: &str) -> String {
     formatted
 }
 
+#[derive(Debug)]
 struct Ext {
     desc: ExtensionDescriptor,
     value: Value,
@@ -269,6 +274,7 @@ fn get_option(pathed: &PathedDescriptor) -> i32 {
 mod test {
     use super::*;
     use rand;
+    use pretty_assertions::assert_eq;
     #[test]
     fn test_format_comment() {
         let comment = "This is a long comment that should be split into multiple lines to fit within 100 characters".to_string();
@@ -277,7 +283,6 @@ mod test {
         assert_eq!(formatted.lines().count(), 2);
     }
     fn eat_around_test(text: &str, expected: &str) {
-        println!("text: {}", text);
         let a_position = text.find('A').unwrap();
         let mut editor = Editor::new(text.to_string());
         let (start, len) = eat_syntax_around(&editor, a_position, 1);
